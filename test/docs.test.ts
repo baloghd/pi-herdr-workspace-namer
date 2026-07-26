@@ -23,12 +23,10 @@ describe("community documentation", () => {
 			expect(agents).toContain(phrase);
 	});
 
-	it("keeps planned changelog content unreleased", () => {
+	it("documents the v0.1.0 release and tag", () => {
 		const changelog = read("CHANGELOG.md");
-		expect(changelog).toContain("## [Unreleased]");
-		expect(changelog).not.toContain("## [0.1.0]");
-		expect(changelog).not.toContain("2026-07-26");
-		expect(changelog).not.toContain("releases/tag/v0.1.0");
+		expect(changelog).toContain("## [0.1.0] - 2026-07-26");
+		expect(changelog).toContain("releases/tag/v0.1.0");
 		expect(changelog).toContain("Generate a concise workspace title");
 	});
 });
