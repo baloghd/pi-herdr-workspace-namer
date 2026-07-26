@@ -1,0 +1,8 @@
+.github/
+docs/
+test/
+scripts/live-smoke.mjs
+AGENTS.md
+CONTRIBUTING.md
+biome.json
+tsconfig.json

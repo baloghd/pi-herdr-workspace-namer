@@ -1,0 +1,66 @@
+{
+	"name": "pi-herdr-workspace-namer",
+	"version": "0.1.0",
+	"description": "Automatically name Herdr workspaces from native Pi session task titles",
+	"type": "module",
+	"license": "MIT",
+	"author": "Tyler Folkman",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/tfolkman/pi-herdr-workspace-namer.git"
+	},
+	"bugs": {
+		"url": "https://github.com/tfolkman/pi-herdr-workspace-namer/issues"
+	},
+	"homepage": "https://github.com/tfolkman/pi-herdr-workspace-namer#readme",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"pi-coding-agent",
+		"herdr",
+		"workspace",
+		"terminal",
+		"ai-agent"
+	],
+	"files": [
+		"extensions",
+		"src",
+		"README.md",
+		"LICENSE",
+		"CHANGELOG.md",
+		"SECURITY.md"
+	],
+	"pi": {
+		"extensions": [
+			"./extensions/workspace-namer.ts"
+		]
+	},
+	"engines": {
+		"node": ">=22"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"dependencies": {
+		"jsonc-parser": "^3.3.1"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.2.4",
+		"@earendil-works/pi-ai": "^0.82.1",
+		"@earendil-works/pi-coding-agent": "^0.82.1",
+		"@types/node": "^24.0.0",
+		"typescript": "^5.9.2",
+		"vitest": "^3.2.4"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"check": "biome check . && npm run typecheck && npm test",
+		"check:write": "biome check --write .",
+		"verify:package": "node scripts/verify-package.mjs",
+		"test:live": "node scripts/live-smoke.mjs",
+		"prepack": "npm run check && npm run verify:package"
+	}
+}
