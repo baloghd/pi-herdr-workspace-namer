@@ -46,3 +46,26 @@
 - Live evidence covers Herdr 0.7.5 on this machine. Older CLIs without isolated named-session support are skipped without touching active/default state.
 - Biome emits informational schema-version and deprecated-configuration notices; these do not fail checks.
 - The unrelated pre-existing unstaged `.superpowers/sdd/task-6-report.md` change remains excluded from Task 7 and its commit.
+
+## Temporary Pi Smoke Hang Follow-up (2026-07-26)
+
+- Reproduced RED with `npm test -- test/extension.test.ts`: outside Herdr, the runtime registered all six lifecycle handlers, including `agent_settled`.
+- Added runtime registration coverage proving the extension registers no handlers unless `HERDR_ENV=1`, while retaining the normal Herdr registration path.
+- Moved the Herdr environment gate to the extension entry point. Outside Herdr the package now returns before lifecycle registration, so it cannot launch a title-model request after `agent_settled`.
+- Focused test: `npm test -- test/extension.test.ts` — passed, 2 tests.
+- Full check: `npm run check` — passed, 9 files / 55 tests, including typecheck.
+- Package verifier: `npm run verify:package` — passed, 11 files / 34,536 bytes unpacked.
+- Package dry run: `npm pack --dry-run` — passed, 11 files, 11.6 kB packed / 34.5 kB unpacked.
+- Packed-install smoke: packed with `npm pack --json --ignore-scripts`, installed the tarball into a fresh temporary npm project, and verified `node_modules/pi-herdr-workspace-namer/extensions/workspace-namer.ts` exists — PASS.
+- The original ambient command was rerun with a 45-second bound and still timed out after printing `OK`; a control run without this package timed out identically, showing an unrelated globally discovered extension remains live in the user's Pi configuration. This timed-out command is not counted as passed.
+- Corrected isolated Pi smoke: `env -u HERDR_ENV timeout 45s pi --no-extensions -e "$PWD" -p 'Reply with OK only' --no-session` — PASS with output `OK` and exit status 0. Pi documents that explicit `-e` paths remain loaded under `--no-extensions`, so this exercises this package while excluding ambient extensions.
+
+### Follow-up Changed Files
+
+- `extensions/workspace-namer.ts`
+- `test/extension.test.ts`
+- `.superpowers/sdd/task-7-report.md`
+
+### Follow-up Residual Risk
+
+- An unrelated globally discovered Pi extension still keeps the ambient smoke process alive after output; package-isolated execution exits normally and is the attributable smoke result for this change.

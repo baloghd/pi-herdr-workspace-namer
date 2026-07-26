@@ -40,6 +40,8 @@ async function completeWithCurrentModel(
 }
 
 export default function workspaceNamer(pi: ExtensionAPI): void {
+	if (process.env.HERDR_ENV !== "1") return;
+
 	registerWorkspaceNamer(pi, {
 		loadConfig: (cwd) => loadConfig({ cwd, readFile: readOptional }),
 		generateTitle: (ctx, prompt, maxLength) =>
@@ -49,13 +51,6 @@ export default function workspaceNamer(pi: ExtensionAPI): void {
 				complete: (system, user) => completeWithCurrentModel(ctx, system, user),
 			}),
 		syncWorkspace: (title, config) => {
-			if (process.env.HERDR_ENV !== "1") {
-				return Promise.resolve({
-					ok: false as const,
-					code: "outside_herdr",
-					message: "Pi is not running inside Herdr",
-				});
-			}
 			return syncWorkspaceName({
 				title,
 				command: config.herdrCommand,
