@@ -42,10 +42,10 @@
 
 ## Residual Risks
 
-- The list-then-spawn sequence cannot atomically reserve a Herdr session name; 128-bit randomness makes a concurrent post-check collision negligible, and cleanup is restricted to a candidate observed absent before successful spawn.
-- Live evidence covers Herdr 0.7.5 on this machine. Older CLIs without isolated named-session support are skipped without touching active/default state.
-- Biome emits informational schema-version and deprecated-configuration notices; these do not fail checks.
-- The unrelated pre-existing unstaged `.superpowers/sdd/task-6-report.md` change remains excluded from Task 7 and its commit.
+- Config-root isolation gives each smoke its own socket/session namespace, so even a coincidentally identical session name cannot target another Herdr session.
+- Live evidence covers Herdr 0.7.5 on this machine. Older or missing CLIs fail an explicitly requested smoke without touching active/default state.
+- Biome 2.5.5 check output is clean, with no schema-version or deprecated-configuration notices.
+- The unrelated scratch Task 6 report remains excluded from this fix wave and its commit.
 
 ## Temporary Pi Smoke Hang Follow-up (2026-07-26)
 
@@ -69,3 +69,12 @@
 ### Follow-up Residual Risk
 
 - An unrelated globally discovered Pi extension still keeps the ambient smoke process alive after output; package-isolated execution exits normally and is the attributable smoke result for this change.
+
+## Final Review Fix Wave
+
+- The live smoke now creates a unique temporary config root with `mkdtemp` and passes its `config.toml` through `HERDR_CONFIG_PATH` to session listing, the spawned server, adapter-backed commands, verification, and session cleanup. Ambient Herdr placement/socket variables are removed from the isolated environment.
+- Tests preserve named-session collision and cleanup coverage while proving list/spawn/run/cleanup use the isolated config instead of an inherited default config. Temporary-root removal failure fails the smoke.
+- Biome configuration now targets the installed 2.5.5 schema and uses `files.ignoreUnknown`, eliminating schema/deprecation notices while intentionally ignoring non-source artifacts.
+- CI runs `npm run verify:package` before `npm pack --dry-run`.
+- The README now describes config-root namespace isolation and accurately states that unsupported/missing Herdr fails an explicitly requested smoke rather than skipping successfully.
+- Fresh final validation passed: focused live-smoke tests (8), full check (9 files / 57 tests, no Biome notices), package verification (11 files / 35,059 bytes), pack dry-run (11 files / 35.1 kB), and live Herdr 0.7.5 smoke in `pi-herdr-workspace-namer-smoke-V-hw7cfcks1ZF6wUR8_R6Q` with no temporary-root leak.

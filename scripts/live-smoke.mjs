@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
-import { execFile, execFileSync, spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -85,23 +87,59 @@ export async function runUniqueLiveSmoke({
 	maxNameAttempts = 10,
 	runForSession,
 	spawnServer,
+	makeTempRoot = () => mkdtemp(path.join(tmpdir(), "phwn-")),
+	removeTempRoot = (root) => rm(root, { recursive: true, force: true }),
+	baseEnv = process.env,
 	...smokeOptions
 }) {
-	const existingSessions = parseSessionNames(await listSessions());
-	let session;
-	for (let attempt = 0; attempt < maxNameAttempts; attempt += 1) {
-		const candidate = createName(randomSuffix);
-		if (!existingSessions.has(candidate)) {
-			session = candidate;
-			break;
-		}
+	const tempRoot = await makeTempRoot();
+	const env = { ...baseEnv, HERDR_CONFIG_PATH: path.join(tempRoot, "config.toml") };
+	for (const inherited of [
+		"HERDR_ENV",
+		"HERDR_PANE_ID",
+		"HERDR_SESSION",
+		"HERDR_SOCKET_PATH",
+		"HERDR_TAB_ID",
+		"HERDR_WORKSPACE_ID",
+	]) {
+		delete env[inherited];
 	}
-	if (!session) {
-		throw new Error(`could not find an unused Herdr session name after ${maxNameAttempts} attempts`);
+	let primaryError;
+	let session;
+	try {
+		const existingSessions = parseSessionNames(await listSessions({ env }));
+		for (let attempt = 0; attempt < maxNameAttempts; attempt += 1) {
+			const candidate = createName(randomSuffix);
+			if (!existingSessions.has(candidate)) {
+				session = candidate;
+				break;
+			}
+		}
+		if (!session) {
+			throw new Error(`could not find an unused Herdr session name after ${maxNameAttempts} attempts`);
+		}
+
+		const run = runForSession(session);
+		await runLiveSmoke({ ...smokeOptions, session, run, spawnServer, env });
+	} catch (error) {
+		primaryError = error;
 	}
 
-	const run = runForSession(session);
-	await runLiveSmoke({ ...smokeOptions, session, run, spawnServer });
+	let removalError;
+	try {
+		await removeTempRoot(tempRoot);
+	} catch (error) {
+		removalError = error;
+	}
+	if (primaryError && removalError) {
+		throw new Error(`${message(primaryError)}; temporary root cleanup failed: ${message(removalError)}`, {
+			cause: primaryError,
+		});
+	}
+	if (primaryError) throw primaryError;
+	if (removalError) {
+		throw new Error(`temporary root cleanup failed: ${message(removalError)}`, { cause: removalError });
+	}
 	return session;
 }
 
@@ -114,8 +152,11 @@ export async function runLiveSmoke({
 	importAdapter = () => import("../src/herdr.ts"),
 	root = ROOT,
 	command = HERDR,
+	env = process.env,
 }) {
-	const server = spawnServer(session);
+	const runIsolated = (args, options = {}) =>
+		run(args, { ...options, env: { ...env, ...options.env, HERDR_CONFIG_PATH: env.HERDR_CONFIG_PATH } });
+	const server = spawnServer(session, { env });
 	// Only a successfully spawned child can establish disposable named-session state.
 	await awaitSuccessfulSpawn(server);
 	const ownsSession = true;
@@ -132,7 +173,7 @@ export async function runLiveSmoke({
 			if (server.exitCode !== null)
 				throw new Error(`isolated Herdr server exited early: ${serverError.trim()}`);
 			try {
-				await run(["workspace", "list"]);
+				await runIsolated(["workspace", "list"]);
 				ready = true;
 				break;
 			} catch {
@@ -142,7 +183,8 @@ export async function runLiveSmoke({
 		if (!ready) throw new Error("isolated Herdr server did not become ready");
 
 		const create = parseResult(
-			(await run(["workspace", "create", "--cwd", root, "--label", "before-smoke", "--no-focus"])).stdout,
+			(await runIsolated(["workspace", "create", "--cwd", root, "--label", "before-smoke", "--no-focus"]))
+				.stdout,
 		);
 		const paneId = create?.root_pane?.pane_id;
 		const workspaceId = create?.workspace?.workspace_id;
@@ -151,9 +193,9 @@ export async function runLiveSmoke({
 		const { syncWorkspaceName } = await importAdapter();
 		const exec = async (_command, args, options = {}) => {
 			try {
-				const result = await run(args, {
+				const result = await runIsolated(args, {
 					timeout: options.timeout,
-					env: { ...process.env, HERDR_PANE_ID: paneId, HERDR_SESSION: session },
+					env: { HERDR_PANE_ID: paneId, HERDR_SESSION: session },
 				});
 				return { code: 0, stdout: result.stdout, stderr: result.stderr, killed: false };
 			} catch (error) {
@@ -175,7 +217,7 @@ export async function runLiveSmoke({
 			throw new Error(`adapter synchronization failed: ${JSON.stringify(synchronized)}`);
 		}
 
-		const get = parseResult((await run(["workspace", "get", workspaceId])).stdout);
+		const get = parseResult((await runIsolated(["workspace", "get", workspaceId])).stdout);
 		if (get?.workspace?.label !== "after-smoke") throw new Error("workspace label was not after-smoke");
 	} catch (error) {
 		primaryError = error;
@@ -184,7 +226,7 @@ export async function runLiveSmoke({
 	let cleanupError;
 	if (ownsSession) {
 		try {
-			await cleanupOwnedSession({ run, server, session, wait });
+			await cleanupOwnedSession({ run: runIsolated, server, session, wait });
 		} catch (error) {
 			cleanupError = error;
 		}
@@ -198,40 +240,23 @@ export async function runLiveSmoke({
 	if (cleanupError) throw new Error(`cleanup failed: ${message(cleanupError)}`, { cause: cleanupError });
 }
 
-function skip(reason) {
-	console.error(`SKIP: ${reason}; no active/default Herdr session was touched.`);
-	process.exit(0);
-}
-
 async function main() {
 	if (process.env.PI_HERDR_WORKSPACE_NAMER_LIVE !== "1") {
 		console.error("Set PI_HERDR_WORKSPACE_NAMER_LIVE=1 to run the disposable Herdr smoke test.");
 		process.exit(2);
 	}
 
-	let help;
-	try {
-		help = execFileSync(HERDR, ["--help"], { encoding: "utf8", timeout: 5_000 });
-	} catch {
-		skip("Herdr is not installed or its CLI syntax cannot be inspected");
-	}
-	if (!help.includes("--session <name>") || !help.includes("herdr session <subcommand>")) {
-		skip("installed Herdr lacks isolated named-session syntax");
-	}
-
-	const listSessions = async () => {
+	const listSessions = async (options = {}) => {
+		const executionOptions = {
+			encoding: "utf8",
+			timeout: 5_000,
+			maxBuffer: 64 * 1024,
+			...options,
+		};
 		try {
-			return await execFileAsync(HERDR, ["session", "list", "--json"], {
-				encoding: "utf8",
-				timeout: 5_000,
-				maxBuffer: 64 * 1024,
-			});
+			return await execFileAsync(HERDR, ["session", "list", "--json"], executionOptions);
 		} catch {
-			return execFileAsync(HERDR, ["session", "list"], {
-				encoding: "utf8",
-				timeout: 5_000,
-				maxBuffer: 64 * 1024,
-			});
+			return execFileAsync(HERDR, ["session", "list"], executionOptions);
 		}
 	};
 	const runForSession =
@@ -243,10 +268,11 @@ async function main() {
 				maxBuffer: 64 * 1024,
 				...options,
 			});
-	const spawnServer = (session) =>
+	const spawnServer = (session, options = {}) =>
 		spawn(HERDR, ["--session", session, "server"], {
 			cwd: ROOT,
 			stdio: ["ignore", "ignore", "pipe"],
+			...options,
 		});
 	try {
 		const session = await runUniqueLiveSmoke({ listSessions, runForSession, spawnServer });

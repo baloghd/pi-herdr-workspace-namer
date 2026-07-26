@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 function serverStub(emitSpawn = true) {
@@ -21,6 +22,102 @@ function serverStub(emitSpawn = true) {
 }
 
 describe("live smoke", () => {
+	it("isolates list, spawn, commands, and cleanup from the default Herdr config", async () => {
+		// @ts-expect-error The smoke is intentionally plain JavaScript for direct Node execution.
+		const { runUniqueLiveSmoke } = await import("../scripts/live-smoke.mjs");
+		const temporaryRoot = path.join("/tmp", "workspace-namer-smoke-isolated");
+		const defaultConfig = path.join("/home", "tester", ".config", "herdr", "config.toml");
+		const removeTempRoot = vi.fn(async () => undefined);
+		const listSessions = vi.fn(async (_options?: { env?: NodeJS.ProcessEnv }) => ({
+			stdout: JSON.stringify({ sessions: [] }),
+		}));
+		const server = serverStub();
+		const spawnServer = vi.fn(() => server);
+		const commandCalls: Array<{ args: string[]; options?: { env?: NodeJS.ProcessEnv } }> = [];
+		const run = vi.fn(async (args: string[], options?: { env?: NodeJS.ProcessEnv }) => {
+			commandCalls.push({ args, options });
+			if (args[0] === "workspace" && args[1] === "create") {
+				return {
+					stdout: JSON.stringify({
+						result: { root_pane: { pane_id: "p1" }, workspace: { workspace_id: "w1" } },
+					}),
+					stderr: "",
+				};
+			}
+			if (args[0] === "workspace" && args[1] === "get") {
+				return {
+					stdout: JSON.stringify({ result: { workspace: { workspace_id: "w1", label: "after-smoke" } } }),
+					stderr: "",
+				};
+			}
+			if (args[0] === "session" && args[1] === "stop") server.kill();
+			return { stdout: "{}", stderr: "" };
+		});
+
+		await expect(
+			runUniqueLiveSmoke({
+				makeTempRoot: vi.fn(async () => temporaryRoot),
+				removeTempRoot,
+				listSessions,
+				createName: () => "pi-herdr-workspace-namer-smoke-isolated",
+				runForSession: vi.fn(() => run),
+				spawnServer,
+				wait: vi.fn(async () => undefined),
+				readinessAttempts: 1,
+				importAdapter: vi.fn(async () => ({
+					syncWorkspaceName: vi.fn(async ({ exec }) => {
+						await exec("herdr", ["pane", "current", "--current"]);
+						return { ok: true, workspaceId: "w1" };
+					}),
+				})),
+				baseEnv: {
+					HOME: "/home/tester",
+					HERDR_CONFIG_PATH: defaultConfig,
+					HERDR_ENV: "1",
+					HERDR_SOCKET_PATH: "/home/tester/.config/herdr/herdr.sock",
+				},
+			}),
+		).resolves.toBe("pi-herdr-workspace-namer-smoke-isolated");
+
+		const isolatedConfig = path.join(temporaryRoot, "config.toml");
+		expect(listSessions).toHaveBeenCalledWith(
+			expect.objectContaining({
+				env: expect.objectContaining({ HERDR_CONFIG_PATH: isolatedConfig }),
+			}),
+		);
+		expect(listSessions.mock.calls[0]?.[0]?.env).not.toHaveProperty("HERDR_SOCKET_PATH");
+		expect(spawnServer).toHaveBeenCalledWith(
+			"pi-herdr-workspace-namer-smoke-isolated",
+			expect.objectContaining({ env: expect.objectContaining({ HERDR_CONFIG_PATH: isolatedConfig }) }),
+		);
+		expect(commandCalls.length).toBeGreaterThan(0);
+		for (const call of commandCalls) {
+			expect(call.options?.env?.HERDR_CONFIG_PATH).toBe(isolatedConfig);
+			expect(call.options?.env?.HERDR_CONFIG_PATH).not.toBe(defaultConfig);
+		}
+		expect(removeTempRoot).toHaveBeenCalledWith(temporaryRoot);
+	});
+
+	it("fails when the isolated temporary root cannot be removed", async () => {
+		// @ts-expect-error The smoke is intentionally plain JavaScript for direct Node execution.
+		const { runUniqueLiveSmoke } = await import("../scripts/live-smoke.mjs");
+		await expect(
+			runUniqueLiveSmoke({
+				makeTempRoot: vi.fn(async () => "/tmp/workspace-namer-smoke-cleanup-failure"),
+				removeTempRoot: vi.fn(async () => {
+					throw new Error("remove denied");
+				}),
+				listSessions: vi.fn(async () => ({
+					stdout: JSON.stringify({ sessions: [{ name: "pi-herdr-workspace-namer-smoke-collision" }] }),
+				})),
+				createName: () => "pi-herdr-workspace-namer-smoke-collision",
+				maxNameAttempts: 1,
+				runForSession: vi.fn(),
+				spawnServer: vi.fn(),
+			}),
+		).rejects.toThrow("temporary root cleanup failed: remove denied");
+	});
+
 	it("uses a 128-bit random suffix and cleans up when readiness fails", async () => {
 		// @ts-expect-error The smoke is intentionally plain JavaScript for direct Node execution.
 		const { createSessionName, runLiveSmoke } = await import("../scripts/live-smoke.mjs");
@@ -96,7 +193,10 @@ describe("live smoke", () => {
 		});
 
 		expect(session).toBe(unique);
-		expect(spawnServer).toHaveBeenCalledWith(unique);
+		expect(spawnServer).toHaveBeenCalledWith(
+			unique,
+			expect.objectContaining({ env: expect.objectContaining({ HERDR_CONFIG_PATH: expect.any(String) }) }),
+		);
 		const cleanupCalls = run.mock.calls.map(([args]) => args).filter(([group]) => group === "session");
 		expect(cleanupCalls).toEqual([
 			["session", "stop", unique, "--json"],

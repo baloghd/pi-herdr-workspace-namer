@@ -95,13 +95,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the RED/GREEN workflow and compatibil
 
 Before a release, run `npm run check`, `npm run verify:package`, and `npm pack --dry-run`. The package verifier performs its internal dry run with lifecycle scripts disabled, checks the publish allowlist and required runtime resources, and scans likely secret assignments without treating documentation placeholders such as `API_KEY=` as secrets.
 
-An optional live smoke creates a uniquely suffixed disposable Herdr session named `pi-herdr-workspace-namer-smoke-<random>`:
+An optional live smoke creates a uniquely suffixed disposable Herdr session named `pi-herdr-workspace-namer-smoke-<random>` inside a fresh temporary Herdr config root:
 
 ```bash
 PI_HERDR_WORKSPACE_NAMER_LIVE=1 npm run test:live
 ```
 
-It never targets the active/default session, and cleanup failure makes the smoke fail. If installed Herdr lacks safe isolated noninteractive syntax, the smoke reports a clear skip. See [CHANGELOG.md](CHANGELOG.md) for release history.
+Every smoke command receives `HERDR_CONFIG_PATH=<temporary-root>/config.toml`, isolating the socket and session namespace from the user's Herdr configuration even if a session name collides. It removes only that isolated namespace and temporary root; any cleanup failure makes the smoke fail. An unsupported or missing Herdr CLI fails the requested live smoke rather than reporting success. See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Contributing
 
