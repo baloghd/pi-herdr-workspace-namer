@@ -33,7 +33,7 @@ const STOP_WORDS = new Set([
 ]);
 
 export function normalizeTitle(value: string, maxLength: number): string | undefined {
-	const hasLineBreak = /[\r\n]/.test(value);
+	const hasLineBreak = /[\r\n\u2028\u2029]/.test(value);
 	const text = Array.from(value, (character) => {
 		const codePoint = character.codePointAt(0) ?? 0;
 		return codePoint <= 0x1f || codePoint === 0x7f ? " " : character;
@@ -60,8 +60,10 @@ export function normalizeTitle(value: string, maxLength: number): string | undef
 
 export function fallbackTitle(prompt: string, maxLength: number): string {
 	const safe = prompt
-		.replace(/(?:[A-Za-z]:)?[\\/][^\s]+/g, " ")
-		.replace(/https?:\/\/\S+/g, " ")
+		.replace(/`[^`]*`/g, " ")
+		.split(/\s+/)
+		.filter((token) => token && !token.includes("/") && !token.includes("\\") && !token.startsWith("-"))
+		.join(" ")
 		.replace(/[^\p{L}\p{N}\s-]/gu, " ")
 		.replace(/\s+/g, " ")
 		.trim();
