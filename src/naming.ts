@@ -61,7 +61,7 @@ export function normalizeTitle(value: string, maxLength: number): string | undef
 			.trim();
 		if (text === before) break;
 	}
-	if (!text || /[`*_~]/.test(text)) return undefined;
+	if (!text || /[`*_~]/.test(text) || COMMENTARY_PREFIX.test(text)) return undefined;
 	const words = text.split(" ");
 	if (words.length < 2 || words.length > 8 || maxLength < 1) return undefined;
 	return (
@@ -77,6 +77,7 @@ export function fallbackTitle(prompt: string, maxLength: number): string {
 	const safe = prompt
 		.replace(/`[^`]*`/g, " ")
 		.split(/\s+/)
+		.map((token) => token.replace(/^[^\p{L}\p{N}-]+|[^\p{L}\p{N}-]+$/gu, ""))
 		.filter((token) => token && !token.includes("/") && !token.includes("\\") && !token.startsWith("-"))
 		.join(" ")
 		.replace(/[^\p{L}\p{N}\s-]/gu, " ")

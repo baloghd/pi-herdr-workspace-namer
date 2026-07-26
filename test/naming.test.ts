@@ -10,6 +10,8 @@ describe("normalizeTitle", () => {
 	it("rejects commentary and empty responses", () => {
 		expect(normalizeTitle("Here is your title:\nFix Status", 48)).toBeUndefined();
 		expect(normalizeTitle("Sure, here is your title: Fix Status", 48)).toBeUndefined();
+		expect(normalizeTitle('"Here is your title: Fix Status"', 48)).toBeUndefined();
+		expect(normalizeTitle("**Title: Fix Status**", 48)).toBeUndefined();
 		expect(normalizeTitle("", 48)).toBeUndefined();
 	});
 	it("sanitizes wrapping quotes before trailing punctuation", () => {
@@ -40,6 +42,7 @@ describe("fallbackTitle", () => {
 	});
 	it("removes shell flags and code spans", () => {
 		expect(fallbackTitle("please fix `npm test --run` --verbose Herdr status", 48)).toBe("Fix Herdr Status");
+		expect(fallbackTitle('please fix "--verbose" Herdr status', 48)).toBe("Fix Herdr Status");
 	});
 });
 

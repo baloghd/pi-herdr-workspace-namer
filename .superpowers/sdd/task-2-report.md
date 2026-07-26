@@ -2,13 +2,13 @@
 
 ## Changed files
 - `src/naming.ts` — added title normalization, deterministic prompt fallback, and injected-completion title generation.
-- `test/naming.test.ts` — added five Vitest cases for normalization, fallback sanitization, model success, and provider failure fallback.
+- `test/naming.test.ts` — contains twelve Vitest cases for normalization, fallback sanitization, model success, and provider failure fallback.
 
 ## Commands and output
 - `npm test -- test/naming.test.ts` (RED) — failed during collection because `src/naming.ts` did not exist.
-- `npm test -- test/naming.test.ts` (GREEN) — 5 tests passed.
+- `npm test -- test/naming.test.ts` (GREEN, initial implementation) — 5 tests passed.
 - `npm exec -- biome check --write src/naming.ts test/naming.test.ts` — formatting applied successfully.
-- `npm test -- test/naming.test.ts` — 5 tests passed.
+- `npm test -- test/naming.test.ts` (initial implementation) — 5 tests passed.
 - `npm run typecheck` — passed.
 - `npm test` — 2 test files, 7 tests passed.
 - `npm exec -- biome check -- src/naming.ts test/naming.test.ts` — passed.
@@ -50,3 +50,12 @@
 - `git diff --check` — passed.
 - `npm exec -- biome check .` — failed only on pre-existing generated `.pi-subagents/artifacts/*_meta.json` formatting; the two Task 2 files pass focused Biome and no generated artifacts were changed.
 - Validation evidence is included in the finalization commit for this checkpoint.
+
+## Final regression-fix verification
+- `npm test -- --run test/naming.test.ts` — passed; 1 file, 12 tests passed.
+- `npm test` — passed; 2 files, 14 tests passed.
+- `npm run typecheck` — passed.
+- `npm exec -- biome check -- src/naming.ts test/naming.test.ts` — passed; 2 files checked.
+- `npm exec -- biome check .` — failed on pre-existing generated `.pi-subagents/artifacts/*_meta.json` formatting; source and test files pass focused Biome.
+- `git diff --check` — passed.
+- Regression coverage now rejects quoted/markdown-wrapped commentary and removes quoted command flags after edge punctuation normalization.
