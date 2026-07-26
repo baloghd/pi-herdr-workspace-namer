@@ -11,8 +11,36 @@ const execFileAsync = promisify(execFile);
 const HERDR = process.env.HERDR_COMMAND || "herdr";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-export function createSessionName(randomSuffix = () => randomBytes(8).toString("hex")) {
+export function createSessionName(randomSuffix = () => randomBytes(16).toString("base64url")) {
 	return `pi-herdr-workspace-namer-smoke-${randomSuffix()}`;
+}
+
+export function parseSessionNames(output) {
+	const stdout = typeof output === "string" ? output : output?.stdout;
+	if (typeof stdout !== "string") throw new Error("Herdr returned no session list output");
+	try {
+		const parsed = JSON.parse(stdout);
+		if (!Array.isArray(parsed?.sessions)) throw new Error("missing sessions array");
+		const names = parsed.sessions.map((session) => session?.name);
+		if (names.some((name) => typeof name !== "string")) throw new Error("invalid session name");
+		return new Set(names);
+	} catch (error) {
+		if (stdout.trimStart().startsWith("{")) {
+			throw new Error(
+				`Herdr returned an unrecognized JSON session list: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
+	const lines = stdout
+		.trim()
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter(Boolean);
+	if (lines.length === 0 || !/^name\s+status(?:\s|$)/i.test(lines[0])) {
+		throw new Error("Herdr returned an unrecognized session list");
+	}
+	return new Set(lines.slice(1).map((line) => line.split(/\s+/, 1)[0]));
 }
 
 function parseResult(stdout) {
@@ -26,6 +54,11 @@ function message(error) {
 async function settleServer(server, wait) {
 	if (server.exitCode !== null) return;
 	await Promise.race([once(server, "exit"), wait(1_000)]);
+}
+
+async function awaitSuccessfulSpawn(server) {
+	if (server.pid !== undefined) return;
+	await Promise.race([once(server, "spawn"), once(server, "error").then(([error]) => Promise.reject(error))]);
 }
 
 async function cleanupOwnedSession({ run, server, session, wait }) {
@@ -45,6 +78,33 @@ async function cleanupOwnedSession({ run, server, session, wait }) {
 	if (failures.length > 0) throw new Error(failures.join("; "));
 }
 
+export async function runUniqueLiveSmoke({
+	listSessions,
+	randomSuffix,
+	createName = createSessionName,
+	maxNameAttempts = 10,
+	runForSession,
+	spawnServer,
+	...smokeOptions
+}) {
+	const existingSessions = parseSessionNames(await listSessions());
+	let session;
+	for (let attempt = 0; attempt < maxNameAttempts; attempt += 1) {
+		const candidate = createName(randomSuffix);
+		if (!existingSessions.has(candidate)) {
+			session = candidate;
+			break;
+		}
+	}
+	if (!session) {
+		throw new Error(`could not find an unused Herdr session name after ${maxNameAttempts} attempts`);
+	}
+
+	const run = runForSession(session);
+	await runLiveSmoke({ ...smokeOptions, session, run, spawnServer });
+	return session;
+}
+
 export async function runLiveSmoke({
 	session,
 	run,
@@ -56,7 +116,8 @@ export async function runLiveSmoke({
 	command = HERDR,
 }) {
 	const server = spawnServer(session);
-	// A successful spawn can create persistent named-session state even before readiness.
+	// Only a successfully spawned child can establish disposable named-session state.
+	await awaitSuccessfulSpawn(server);
 	const ownsSession = true;
 	let serverError = "";
 	server.stderr.setEncoding("utf8");
@@ -158,30 +219,37 @@ async function main() {
 		skip("installed Herdr lacks isolated named-session syntax");
 	}
 
-	try {
-		const sessions = JSON.parse(
-			execFileSync(HERDR, ["session", "list", "--json"], { encoding: "utf8" }),
-		).sessions;
-		if (!Array.isArray(sessions)) skip("installed Herdr returned an unrecognized session list");
-	} catch {
-		skip("installed Herdr cannot list named sessions noninteractively");
-	}
-
-	const session = createSessionName();
-	const run = (args, options = {}) =>
-		execFileAsync(HERDR, args[0] === "session" ? args : ["--session", session, ...args], {
-			cwd: ROOT,
-			timeout: 5_000,
-			maxBuffer: 64 * 1024,
-			...options,
-		});
-	const spawnServer = () =>
+	const listSessions = async () => {
+		try {
+			return await execFileAsync(HERDR, ["session", "list", "--json"], {
+				encoding: "utf8",
+				timeout: 5_000,
+				maxBuffer: 64 * 1024,
+			});
+		} catch {
+			return execFileAsync(HERDR, ["session", "list"], {
+				encoding: "utf8",
+				timeout: 5_000,
+				maxBuffer: 64 * 1024,
+			});
+		}
+	};
+	const runForSession =
+		(session) =>
+		(args, options = {}) =>
+			execFileAsync(HERDR, args[0] === "session" ? args : ["--session", session, ...args], {
+				cwd: ROOT,
+				timeout: 5_000,
+				maxBuffer: 64 * 1024,
+				...options,
+			});
+	const spawnServer = (session) =>
 		spawn(HERDR, ["--session", session, "server"], {
 			cwd: ROOT,
 			stdio: ["ignore", "ignore", "pipe"],
 		});
 	try {
-		await runLiveSmoke({ session, run, spawnServer });
+		const session = await runUniqueLiveSmoke({ listSessions, runForSession, spawnServer });
 		console.log(`live smoke passed in disposable Herdr session ${session}`);
 	} catch (error) {
 		console.error(`live smoke failed: ${message(error)}`);

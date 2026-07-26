@@ -1,5 +1,7 @@
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = new URL("..", import.meta.url);
@@ -35,7 +37,40 @@ describe("package verifier", () => {
 		expect(containsSecretAssignment('PASSWORD="[REDACTED:Generic Password Field]"')).toBe(true);
 	});
 
-	it("rejects unsafe, non-allowlisted, oversized, and session artifact paths", async () => {
+	it("exits nonzero for an unsafe packed-file record and identifies an absolute-home path", () => {
+		const fixture = mkdtempSync(path.join(tmpdir(), "workspace-namer-unsafe-package-"));
+		try {
+			mkdirSync(path.join(fixture, "bin"), { recursive: true });
+			mkdirSync(path.join(fixture, "src"));
+			writeFileSync(path.join(fixture, "src", "index.ts"), "export {};\n");
+			const files = [
+				"package.json",
+				"README.md",
+				"LICENSE",
+				"CHANGELOG.md",
+				"SECURITY.md",
+				"extensions/workspace-namer.ts",
+				"src/index.ts",
+				"home/alice/.env",
+			].map((packagePath) => ({ path: packagePath, size: 10 }));
+			const fakeNpm = path.join(fixture, "bin", "npm");
+			writeFileSync(fakeNpm, `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify([{ files }])}'\n`);
+			chmodSync(fakeNpm, 0o755);
+
+			const result = spawnSync(process.execPath, [path.join(root.pathname, "scripts/verify-package.mjs")], {
+				cwd: fixture,
+				encoding: "utf8",
+				env: { ...process.env, PATH: `${path.join(fixture, "bin")}:${process.env.PATH}` },
+			});
+
+			expect(result.status).not.toBe(0);
+			expect(result.stderr).toContain("absolute home fragment in path: home/alice/.env");
+		} finally {
+			rmSync(fixture, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects unsafe, non-allowlisted, oversized, session, and absolute-home paths", async () => {
 		// @ts-expect-error The verifier is intentionally plain JavaScript for direct Node execution.
 		const { inspectPackage } = await import("../scripts/verify-package.mjs");
 		const errors = inspectPackage(
@@ -51,6 +86,7 @@ describe("package verifier", () => {
 					{ path: "docs/private.txt", size: 10 },
 					{ path: "src/oversized.ts", size: 250 * 1024 + 1 },
 					{ path: "src/debug.session", size: 10 },
+					{ path: "home/alice/private.ts", size: 10 },
 				],
 			},
 			{ runtimeFiles: ["src/index.ts"], readContents: () => "" },
@@ -61,6 +97,7 @@ describe("package verifier", () => {
 				"unsafe directory in path: docs/private.txt",
 				"file exceeds 250 KiB: src/oversized.ts (256001 bytes)",
 				"session/log artifact in path: src/debug.session",
+				"absolute home fragment in path: home/alice/private.ts",
 			]),
 		);
 	});
