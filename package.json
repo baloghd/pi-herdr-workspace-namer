@@ -1,6 +1,6 @@
 {
 	"name": "pi-herdr-workspace-namer",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Automatically name Herdr workspaces from native Pi session task titles",
 	"type": "module",
 	"license": "MIT",

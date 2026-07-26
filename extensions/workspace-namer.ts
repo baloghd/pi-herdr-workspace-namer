@@ -40,7 +40,7 @@ async function completeWithCurrentModel(
 }
 
 export default function workspaceNamer(pi: ExtensionAPI): void {
-	if (process.env.HERDR_ENV !== "1") return;
+	if (process.env.HERDR_ENV !== "1" || process.env.PI_SUBAGENT_CHILD === "1") return;
 
 	registerWorkspaceNamer(pi, {
 		loadConfig: (cwd) => loadConfig({ cwd, readFile: readOptional }),

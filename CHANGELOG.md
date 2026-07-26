@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-07-26
+
+### Fixed
+
+- Prevent Pi subagent child sessions from renaming Herdr workspaces.
+
 ## [0.1.0] - 2026-07-26
 
 ### Added
@@ -18,4 +24,5 @@ All notable changes to this project are documented here. This file follows [Keep
 - Herdr `>=0.7.5`
 - Node.js `>=22`
 
+[0.1.1]: https://github.com/tfolkman/pi-herdr-workspace-namer/releases/tag/v0.1.1
 [0.1.0]: https://github.com/tfolkman/pi-herdr-workspace-namer/releases/tag/v0.1.0

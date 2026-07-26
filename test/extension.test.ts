@@ -30,8 +30,21 @@ describe("runtime registration", () => {
 		expect(exec).not.toHaveBeenCalled();
 	});
 
+	it("does not register lifecycle handlers for Pi subagent children", () => {
+		vi.stubEnv("HERDR_ENV", "1");
+		vi.stubEnv("PI_SUBAGENT_CHILD", "1");
+		const { pi, on, setSessionName, exec } = runtime();
+
+		workspaceNamer(pi);
+
+		expect(on).not.toHaveBeenCalled();
+		expect(setSessionName).not.toHaveBeenCalled();
+		expect(exec).not.toHaveBeenCalled();
+	});
+
 	it("registers the lifecycle handlers inside Herdr", () => {
 		vi.stubEnv("HERDR_ENV", "1");
+		vi.stubEnv("PI_SUBAGENT_CHILD", "0");
 		const { pi, on } = runtime();
 
 		workspaceNamer(pi);
