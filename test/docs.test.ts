@@ -22,4 +22,13 @@ describe("community documentation", () => {
 		for (const phrase of ["agent_settled", "Pi session name", "pi.exec", "npm pack --dry-run", "test first"])
 			expect(agents).toContain(phrase);
 	});
+
+	it("keeps planned changelog content unreleased", () => {
+		const changelog = read("CHANGELOG.md");
+		expect(changelog).toContain("## [Unreleased]");
+		expect(changelog).not.toContain("## [0.1.0]");
+		expect(changelog).not.toContain("2026-07-26");
+		expect(changelog).not.toContain("releases/tag/v0.1.0");
+		expect(changelog).toContain("Generate a concise workspace title");
+	});
 });
