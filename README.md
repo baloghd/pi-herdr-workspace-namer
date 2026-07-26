@@ -34,9 +34,9 @@ The extension is loaded by Pi from the package's extension manifest. It does not
 | `/fork` | Starts a new Pi session identity. The fork must receive its own first prompt before it is named. |
 | `/name` | A manually assigned Pi session name is synchronized to the current Herdr workspace. |
 | Later prompts | Do not trigger another generated name in the same Pi session. |
-| Outside Herdr | Pi still receives its generated session name, but no Herdr command is attempted. |
+| Outside Herdr | Completely inert: no lifecycle handlers, Pi session naming, model request, state recording, or Herdr command. |
 
-Generated naming is enabled by default and runs after the agent settles the first prompt. A manually supplied Pi session name always takes precedence.
+Generated naming is enabled by default inside Herdr and runs after the agent settles the first prompt. A manually supplied Pi session name always takes precedence. Outside Herdr, the extension is completely inert and performs no naming or model request.
 
 ## Configuration
 
@@ -59,7 +59,7 @@ Defaults are enabled naming, a 48-character maximum, deterministic `local` fallb
 
 ## Privacy and cost
 
-For an eligible first prompt, the prompt is sent to the active provider in **one additional model request** to produce the title. If that request is unavailable or its result is unusable, a deterministic local fallback is used. This package sends no telemetry and stores only bounded, session-scoped lifecycle records in the Pi session.
+For an eligible first prompt inside Herdr, the prompt is sent to the active provider in **one additional model request** to produce the title. If that request is unavailable or its result is unusable, a deterministic local fallback is used. Outside Herdr, the early gate avoids any model request, unrelated model overhead, or possible hangs in ordinary Pi sessions. This package sends no telemetry and stores only bounded, session-scoped lifecycle records in the Pi session.
 
 ## Herdr limitation
 

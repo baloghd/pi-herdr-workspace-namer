@@ -17,7 +17,12 @@ Provide a community-ready Pi package that keeps the current Herdr workspace labe
 - Follow Pi sessions across `/new`, `/resume`, and `/fork` without periodic polling.
 - Mirror later manual Pi `/name` changes.
 - Publish as an easy-to-install GitHub and npm Pi package listed in the Pi package gallery.
-- Fail safely outside Herdr or when optional integration operations fail.
+- Operate only inside Herdr; remain completely inert outside Herdr (including no Pi naming or model call).
+- Fail safely when optional integration operations fail inside Herdr.
+
+## Decision note: Herdr-only activation
+
+The package is intentionally scoped to Herdr sessions. Outside Herdr, the extension's entry-point gate returns before lifecycle registration, so it does not name Pi sessions, call a model, write state, or invoke Herdr. This avoids unrelated model overhead and possible hangs for ordinary Pi usage while keeping the package's behavior focused on its Herdr workspace purpose.
 
 ## Non-goals
 
@@ -30,7 +35,11 @@ Provide a community-ready Pi package that keeps the current Herdr workspace labe
 
 ## User-visible behavior
 
-### New unnamed session
+### Outside Herdr
+
+The extension returns before registering lifecycle handlers. It performs no Pi session naming, model request, state recording, or Herdr command outside Herdr. This package is intentionally Herdr-only to avoid unrelated model overhead and possible hangs in ordinary Pi sessions.
+
+### New unnamed session (inside Herdr)
 
 1. Capture the first meaningful interactive or RPC prompt.
 2. Let the normal Pi turn complete.
@@ -91,7 +100,7 @@ Herdr's `workspace.rename` sets `Workspace.custom_name`, which stops cwd-derived
 - Falls back to a deterministic local title derived from the first prompt.
 - Never logs or persists provider credentials.
 
-The naming call sends the first task prompt to the same provider already configured for the active Pi model. This incurs one additional model request per new/forked session. README must disclose privacy, latency, and cost implications.
+The naming call sends the first task prompt to the same provider already configured for the active Pi model. When running inside Herdr, this incurs one additional model request per new/forked session. README must disclose privacy, latency, and cost implications. Outside Herdr, the extension's early gate prevents this module from running.
 
 ### Pi lifecycle module
 
@@ -168,7 +177,7 @@ Defaults require no configuration. Unknown or invalid values fall back safely. T
 
 - Naming failure: use deterministic local fallback.
 - No active model/auth: use local fallback.
-- Herdr unavailable/outside Herdr: preserve Pi session naming and skip workspace sync.
+- Herdr unavailable: preserve Pi session naming and skip workspace synchronization; outside Herdr the extension is inert before lifecycle registration.
 - Herdr command failure: append failure state; optionally notify once; never block or fail the Pi turn.
 - Verification mismatch: report concise warning and stop; no retry loop.
 - Reload after uncertain external outcome: native Pi session name remains authoritative; next `session_start` may safely reapply the same idempotent workspace label.
@@ -233,7 +242,7 @@ Cover:
 - supported Pi and Herdr versions;
 - install, update, uninstall, and configuration;
 - lifecycle table for startup/new/resume/fork/name;
-- current-model request cost/privacy disclosure;
+- current-model request cost/privacy disclosure (inside Herdr only);
 - Herdr custom-name limitation;
 - troubleshooting and diagnostics;
 - trust warning that Pi packages execute with full user privileges;

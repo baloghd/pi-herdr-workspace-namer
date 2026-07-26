@@ -2,9 +2,16 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import workspaceNamer from "../extensions/workspace-namer.ts";
 
-function runtime(): { pi: ExtensionAPI; on: ReturnType<typeof vi.fn> } {
+function runtime(): {
+	pi: ExtensionAPI;
+	on: ReturnType<typeof vi.fn>;
+	setSessionName: ReturnType<typeof vi.fn>;
+	exec: ReturnType<typeof vi.fn>;
+} {
 	const on = vi.fn();
-	return { pi: { on } as unknown as ExtensionAPI, on };
+	const setSessionName = vi.fn();
+	const exec = vi.fn();
+	return { pi: { on, setSessionName, exec } as unknown as ExtensionAPI, on, setSessionName, exec };
 }
 
 afterEach(() => {
@@ -14,11 +21,13 @@ afterEach(() => {
 describe("runtime registration", () => {
 	it("does not register lifecycle handlers outside Herdr", () => {
 		vi.stubEnv("HERDR_ENV", "0");
-		const { pi, on } = runtime();
+		const { pi, on, setSessionName, exec } = runtime();
 
 		workspaceNamer(pi);
 
 		expect(on).not.toHaveBeenCalled();
+		expect(setSessionName).not.toHaveBeenCalled();
+		expect(exec).not.toHaveBeenCalled();
 	});
 
 	it("registers the lifecycle handlers inside Herdr", () => {

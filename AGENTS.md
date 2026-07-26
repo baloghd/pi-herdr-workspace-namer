@@ -10,6 +10,7 @@ Before changing lifecycle code, read the installed Pi `docs/extensions.md` and t
 
 ## Invariants
 
+- Herdr-only package: the extension must return before registering handlers outside Herdr, with no Pi naming, model call, state write, or Herdr command.
 - Generate at most once per Pi session ID.
 - Use `agent_settled`, never `agent_end`, for naming completion.
 - Reconstruct only from `ctx.sessionManager.getBranch()` and scope records by current session ID.
