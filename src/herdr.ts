@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rm, stat, utimes } from "node:fs/promises";
+import { link, mkdir, open, readFile, rename, rm, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
@@ -67,10 +67,16 @@ function isErrno(error: unknown, code: string): boolean {
 }
 
 async function removeIfOwned(lock: string, token: string): Promise<void> {
+	const quarantine = `${lock}.${randomUUID()}.quarantine`;
 	try {
-		if ((await readFile(lock, "utf8")) === token) await rm(lock, { force: true });
+		await rename(lock, quarantine);
+		if ((await readFile(quarantine, "utf8")) === token) {
+			await rm(quarantine, { force: true });
+			return;
+		}
+		await restoreQuarantinedLock(quarantine, lock);
 	} catch {
-		// The lock disappeared or changed while ownership was being checked.
+		await restoreQuarantinedLock(quarantine, lock);
 	}
 }
 
@@ -85,18 +91,42 @@ async function refreshIfOwned(lock: string, token: string): Promise<void> {
 	}
 }
 
+async function restoreQuarantinedLock(quarantine: string, lock: string): Promise<void> {
+	try {
+		await link(quarantine, lock);
+	} catch (error) {
+		if (!isErrno(error, "EEXIST")) return;
+	}
+	await rm(quarantine, { force: true });
+}
+
 async function removeIfStale(lock: string): Promise<void> {
+	const quarantine = `${lock}.${randomUUID()}.quarantine`;
 	try {
 		const before = await stat(lock);
 		if (Date.now() - before.mtimeMs <= STALE_LOCK_MS) return;
 		const token = await readFile(lock, "utf8");
-		const after = await stat(lock);
-		if (before.dev !== after.dev || before.ino !== after.ino || before.mtimeMs !== after.mtimeMs) return;
-		// Ownership tokens prevent an old holder's finally block from deleting a
-		// replacement lock. Re-check content immediately before stale reclamation.
-		if ((await readFile(lock, "utf8")) === token) await rm(lock, { force: true });
+		const snapshot = await stat(lock);
+		if (before.dev !== snapshot.dev || before.ino !== snapshot.ino || before.mtimeMs !== snapshot.mtimeMs) {
+			return;
+		}
+
+		await rename(lock, quarantine);
+		const quarantinedToken = await readFile(quarantine, "utf8");
+		const quarantined = await stat(quarantine);
+		const unchanged =
+			quarantined.dev === snapshot.dev &&
+			quarantined.ino === snapshot.ino &&
+			quarantined.mtimeMs === snapshot.mtimeMs &&
+			quarantinedToken === token;
+		if (unchanged && Date.now() - quarantined.mtimeMs > STALE_LOCK_MS) {
+			await rm(quarantine, { force: true });
+			return;
+		}
+		await restoreQuarantinedLock(quarantine, lock);
 	} catch {
-		// Another contender changed the lock; retry normal acquisition.
+		// A changed candidate is restored only if no replacement owns the lock path.
+		await restoreQuarantinedLock(quarantine, lock);
 	}
 }
 

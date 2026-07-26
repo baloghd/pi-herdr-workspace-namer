@@ -6,6 +6,23 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Exec, syncWorkspaceName } from "../src/herdr.ts";
 
+const lockRace = vi.hoisted(() => ({
+	beforeRename: undefined as undefined | ((source: string, destination: string) => Promise<void>),
+	afterRename: undefined as undefined | ((source: string, destination: string) => Promise<void>),
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs/promises")>();
+	return {
+		...actual,
+		rename: async (source: string, destination: string) => {
+			await lockRace.beforeRename?.(source, destination);
+			await actual.rename(source, destination);
+			await lockRace.afterRename?.(source, destination);
+		},
+	};
+});
+
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
 const ok = (stdout: string) => ({ stdout, stderr: "", code: 0, killed: false });
@@ -20,6 +37,8 @@ async function temporaryDirectory(): Promise<string> {
 }
 
 afterEach(async () => {
+	lockRace.beforeRename = undefined;
+	lockRace.afterRename = undefined;
 	await Promise.all(
 		temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
 	);
@@ -162,6 +181,50 @@ describe("syncWorkspaceName", () => {
 		expect(result).toMatchObject({ ok: false, code: "lock_unavailable" });
 		expect(await readFile(liveLock, "utf8")).toBe("current-owner");
 	}, 4000);
+
+	it("does not reclaim a replacement installed after the stale snapshot", async () => {
+		const lockRoot = await temporaryDirectory();
+		const lock = join(lockRoot, "raced.lock");
+		await writeFile(lock, "stale-owner", { mode: 0o600 });
+		const old = new Date(Date.now() - 20_000);
+		await utimes(lock, old, old);
+		lockRace.beforeRename = async (source) => {
+			if (source !== lock) return;
+			lockRace.beforeRename = undefined;
+			await rm(lock, { force: true });
+			await writeFile(lock, "replacement-owner", { mode: 0o600 });
+		};
+
+		const result = await syncWorkspaceName({
+			title: "Must wait",
+			command: "herdr",
+			timeoutMs: 5000,
+			exec: vi.fn().mockResolvedValue(pane("raced")),
+			lockRoot,
+		});
+
+		expect(result).toMatchObject({ ok: false, code: "lock_unavailable" });
+		expect(await readFile(lock, "utf8")).toBe("replacement-owner");
+	}, 4000);
+
+	it("owner release does not delete a replacement lock", async () => {
+		const lockRoot = await temporaryDirectory();
+		const lock = join(lockRoot, "release-race.lock");
+		lockRace.afterRename = async (source) => {
+			if (source === lock) await writeFile(lock, "replacement-owner", { mode: 0o600 });
+		};
+		const exec = vi
+			.fn()
+			.mockResolvedValueOnce(pane("release-race"))
+			.mockResolvedValueOnce(pane("release-race"))
+			.mockResolvedValueOnce(workspace("release-race", "Done"))
+			.mockResolvedValueOnce(workspace("release-race", "Done"));
+
+		await expect(
+			syncWorkspaceName({ title: "Done", command: "herdr", timeoutMs: 5000, exec, lockRoot }),
+		).resolves.toMatchObject({ ok: true });
+		expect(await readFile(lock, "utf8")).toBe("replacement-owner");
+	});
 
 	it("uses argv execution so shell metacharacters remain one title argument", async () => {
 		const directory = await temporaryDirectory();

@@ -26,3 +26,10 @@
 
 - Stale-lock reclamation is necessarily advisory on filesystem locks. Ownership tokens and heartbeat reduce replacement/active-owner deletion risk, but process pauses longer than ten seconds on filesystems with unusual cache/mtime behavior remain a residual limitation.
 - `npm run check` is not a useful repository-wide signal because Biome scans pre-existing `.pi-subagents/artifacts/*.json` files and reports their formatting. Focused Biome, the complete test suite, typecheck, and `git diff --check` all pass.
+
+## Task 4 Lock TOCTOU Follow-up
+
+- Reworked stale and owner cleanup to atomically move the candidate lock to a unique quarantine path, validate its token and metadata, and remove it only when ownership is still proven. A changed candidate is restored with a no-replace hard link, so a replacement lock is never deleted.
+- Added deterministic race tests in `test/herdr.test.ts` for replacement installation after stale inspection and replacement installation during owner release. The Herdr-focused suite now passes 10 tests.
+- Verification: `npm test` passed (28 tests across 4 files); `npm run typecheck` passed; `npx biome check src/herdr.ts test/herdr.test.ts test/fixtures/fake-herdr.mjs` passed; `git diff --check` passed.
+- Review finding: no blockers identified. Residual risk remains the advisory nature of stale recovery if a process is paused beyond the ten-second stale threshold or if filesystem timestamp semantics are unusual.
