@@ -33,6 +33,38 @@ function fail(errors) {
 	process.exitCode = 1;
 }
 
+export function inspectPackage(record, options) {
+	if (!record || !Array.isArray(record.files)) return ["npm pack returned no package file list"];
+
+	const errors = [];
+	const paths = new Set(record.files.map((file) => file.path));
+	for (const required of REQUIRED_FILES) {
+		if (!paths.has(required)) errors.push(`missing required file: ${required}`);
+	}
+	for (const runtimeFile of options.runtimeFiles) {
+		if (!paths.has(runtimeFile)) errors.push(`missing runtime module: ${runtimeFile}`);
+	}
+	if (options.runtimeFiles.length === 0) errors.push("missing src/*.ts runtime modules");
+
+	for (const file of record.files) {
+		const packagePath = file.path;
+		if (!ALLOWED_PATH.test(packagePath)) errors.push(`file is not allowlisted: ${packagePath}`);
+		if (UNSAFE_DIRECTORY.test(packagePath)) errors.push(`unsafe directory in path: ${packagePath}`);
+		if (SESSION_OR_LOG.test(packagePath)) errors.push(`session/log artifact in path: ${packagePath}`);
+		if (ABSOLUTE_HOME.test(packagePath)) errors.push(`absolute home fragment in path: ${packagePath}`);
+		if (file.size > MAX_FILE_SIZE) errors.push(`file exceeds 250 KiB: ${packagePath} (${file.size} bytes)`);
+
+		if (!ALLOWED_PATH.test(packagePath)) continue;
+		try {
+			const contents = options.readContents(packagePath);
+			if (containsSecretAssignment(contents)) errors.push(`likely secret assignment in: ${packagePath}`);
+		} catch (error) {
+			errors.push(`cannot inspect ${packagePath}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+	return errors;
+}
+
 export function verifyPackage(root = process.cwd()) {
 	let records;
 	try {
@@ -48,43 +80,14 @@ export function verifyPackage(root = process.cwd()) {
 		return;
 	}
 
-	const record = records?.[0];
-	if (!record || !Array.isArray(record.files)) {
-		fail(["npm pack returned no package file list"]);
-		return;
-	}
-
-	const errors = [];
-	const paths = new Set(record.files.map((file) => file.path));
-	for (const required of REQUIRED_FILES) {
-		if (!paths.has(required)) errors.push(`missing required file: ${required}`);
-	}
-
 	const runtimeFiles = readdirSync(path.join(root, "src"), { withFileTypes: true })
 		.filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
 		.map((entry) => `src/${entry.name}`);
-	for (const runtimeFile of runtimeFiles) {
-		if (!paths.has(runtimeFile)) errors.push(`missing runtime module: ${runtimeFile}`);
-	}
-	if (runtimeFiles.length === 0) errors.push("missing src/*.ts runtime modules");
-
-	for (const file of record.files) {
-		const packagePath = file.path;
-		if (!ALLOWED_PATH.test(packagePath)) errors.push(`file is not allowlisted: ${packagePath}`);
-		if (UNSAFE_DIRECTORY.test(packagePath)) errors.push(`unsafe directory in path: ${packagePath}`);
-		if (SESSION_OR_LOG.test(packagePath)) errors.push(`session/log artifact in path: ${packagePath}`);
-		if (ABSOLUTE_HOME.test(packagePath)) errors.push(`absolute home fragment in path: ${packagePath}`);
-		if (file.size > MAX_FILE_SIZE) errors.push(`file exceeds 250 KiB: ${packagePath} (${file.size} bytes)`);
-
-		if (!ALLOWED_PATH.test(packagePath)) continue;
-		try {
-			const contents = readFileSync(path.join(root, packagePath), "utf8");
-			if (containsSecretAssignment(contents)) errors.push(`likely secret assignment in: ${packagePath}`);
-		} catch (error) {
-			errors.push(`cannot inspect ${packagePath}: ${error instanceof Error ? error.message : String(error)}`);
-		}
-	}
-
+	const record = records?.[0];
+	const errors = inspectPackage(record, {
+		runtimeFiles,
+		readContents: (packagePath) => readFileSync(path.join(root, packagePath), "utf8"),
+	});
 	if (errors.length > 0) {
 		fail(errors);
 		return;

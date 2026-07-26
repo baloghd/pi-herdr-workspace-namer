@@ -31,7 +31,56 @@ describe("package verifier", () => {
 		expect(PACK_ARGS).toEqual(["pack", "--json", "--dry-run", "--ignore-scripts"]);
 		expect(containsSecretAssignment("Set API_KEY= in your environment.")).toBe(false);
 		expect(containsSecretAssignment("The TOKEN= form is supported.")).toBe(false);
-		expect(containsSecretAssignment("API_KEY=real-secret-value")).toBe(true);
-		expect(containsSecretAssignment('PASSWORD="not-safe"')).toBe(true);
+		expect(containsSecretAssignment("API_KEY=[REDACTED:Generic Password Field]")).toBe(true);
+		expect(containsSecretAssignment('PASSWORD="[REDACTED:Generic Password Field]"')).toBe(true);
+	});
+
+	it("rejects unsafe, non-allowlisted, oversized, and session artifact paths", async () => {
+		// @ts-expect-error The verifier is intentionally plain JavaScript for direct Node execution.
+		const { inspectPackage } = await import("../scripts/verify-package.mjs");
+		const errors = inspectPackage(
+			{
+				files: [
+					{ path: "package.json", size: 10 },
+					{ path: "README.md", size: 10 },
+					{ path: "LICENSE", size: 10 },
+					{ path: "CHANGELOG.md", size: 10 },
+					{ path: "SECURITY.md", size: 10 },
+					{ path: "extensions/workspace-namer.ts", size: 10 },
+					{ path: "src/index.ts", size: 10 },
+					{ path: "docs/private.txt", size: 10 },
+					{ path: "src/oversized.ts", size: 250 * 1024 + 1 },
+					{ path: "src/debug.session", size: 10 },
+				],
+			},
+			{ runtimeFiles: ["src/index.ts"], readContents: () => "" },
+		);
+		expect(errors).toEqual(
+			expect.arrayContaining([
+				"file is not allowlisted: docs/private.txt",
+				"unsafe directory in path: docs/private.txt",
+				"file exceeds 250 KiB: src/oversized.ts (256001 bytes)",
+				"session/log artifact in path: src/debug.session",
+			]),
+		);
+	});
+
+	it("rejects a package with no runtime module", async () => {
+		// @ts-expect-error The verifier is intentionally plain JavaScript for direct Node execution.
+		const { inspectPackage } = await import("../scripts/verify-package.mjs");
+		const errors = inspectPackage(
+			{
+				files: [
+					{ path: "package.json", size: 10 },
+					{ path: "README.md", size: 10 },
+					{ path: "LICENSE", size: 10 },
+					{ path: "CHANGELOG.md", size: 10 },
+					{ path: "SECURITY.md", size: 10 },
+					{ path: "extensions/workspace-namer.ts", size: 10 },
+				],
+			},
+			{ runtimeFiles: [], readContents: () => "" },
+		);
+		expect(errors).toContain("missing src/*.ts runtime modules");
 	});
 });
