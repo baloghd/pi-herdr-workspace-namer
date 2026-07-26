@@ -9,7 +9,14 @@ describe("normalizeTitle", () => {
 	});
 	it("rejects commentary and empty responses", () => {
 		expect(normalizeTitle("Here is your title:\nFix Status", 48)).toBeUndefined();
+		expect(normalizeTitle("Sure, here is your title: Fix Status", 48)).toBeUndefined();
 		expect(normalizeTitle("", 48)).toBeUndefined();
+	});
+	it("sanitizes wrapping quotes before trailing punctuation", () => {
+		expect(normalizeTitle('"Fix Status".', 48)).toBe("Fix Status");
+	});
+	it("sanitizes unambiguous internal markdown emphasis", () => {
+		expect(normalizeTitle("Fix **Herdr** Status", 48)).toBe("Fix Herdr Status");
 	});
 	it("rejects Unicode line separators before normalization", () => {
 		expect(normalizeTitle("Fix\u2028Status", 48)).toBeUndefined();

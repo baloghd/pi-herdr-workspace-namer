@@ -6,6 +6,10 @@ const TITLE_SYSTEM_PROMPT = [
 	"No quotes, markdown, path names, issue commentary, or trailing punctuation.",
 ].join("\n");
 
+const COMMENTARY_PREFIX =
+	/^(?:(?:sure|okay|ok|certainly|of course)[,!\s]+)?here(?:'s| is)(?: your)? title\b|^(?:sure|okay|ok|certainly)[,!\s]+title\b|^title\s*:/i;
+const MARKDOWN_DELIMITER = /(^|\s)(\*\*|__|~~|`|\*)(?=\S)([\s\S]*?\S)\2(?=$|\s)/g;
+
 const STOP_WORDS = new Set([
 	"a",
 	"an",
@@ -34,19 +38,30 @@ const STOP_WORDS = new Set([
 
 export function normalizeTitle(value: string, maxLength: number): string | undefined {
 	const hasLineBreak = /[\r\n\u2028\u2029]/.test(value);
-	const text = Array.from(value, (character) => {
+	let text = Array.from(value, (character) => {
 		const codePoint = character.codePointAt(0) ?? 0;
 		return codePoint <= 0x1f || codePoint === 0x7f ? " " : character;
 	})
 		.join("")
-		.replace(/^\s*(?:[-*#>`]+\s*)+/, "")
-		.replace(/\s*(?:[-*_~`]+\s*)+$/, "")
-		.replace(/^['"“”‘’]+|['"“”‘’]+$/g, "")
-		.replace(/[.!?:;,]+$/g, "")
 		.replace(/\s+/g, " ")
 		.trim();
-	if (hasLineBreak || !text || /^(?:here(?:'s| is)(?: your)? title\b|title\s*:)/i.test(text))
-		return undefined;
+	if (hasLineBreak || !text || COMMENTARY_PREFIX.test(text)) return undefined;
+
+	text = text.replace(MARKDOWN_DELIMITER, "$1$3");
+	if (/[`*_~]/.test(text)) return undefined;
+
+	// Strip unambiguous edge decoration repeatedly so punctuation outside a quote is handled.
+	for (let pass = 0; pass < 3; pass++) {
+		const before = text;
+		text = text
+			.replace(/^\s*(?:[-*#>`]+\s*)+/, "")
+			.replace(/^['"“”‘’]+|['"“”‘’]+$/g, "")
+			.replace(/[.!?:;,]+$/g, "")
+			.replace(/\s*(?:[-*_~`]+\s*)+$/, "")
+			.trim();
+		if (text === before) break;
+	}
+	if (!text || /[`*_~]/.test(text)) return undefined;
 	const words = text.split(" ");
 	if (words.length < 2 || words.length > 8 || maxLength < 1) return undefined;
 	return (

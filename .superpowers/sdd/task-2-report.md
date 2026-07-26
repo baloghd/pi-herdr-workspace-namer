@@ -40,3 +40,13 @@
 - `npm exec -- biome check -- src/naming.ts test/naming.test.ts` — passed.
 - `npm test` — 2 test files, 12 tests passed.
 - `git diff --check` — passed.
+
+## Checkpoint/finalization validation
+- Reviewed only the uncommitted changes in `src/naming.ts` and `test/naming.test.ts`; the sanitization fix is correct and remains narrowly scoped.
+- `npm test -- test/naming.test.ts` — 12 tests passed.
+- `npm test` — 2 test files, 14 tests passed.
+- `npm run typecheck` — passed.
+- `npm exec -- biome check -- src/naming.ts test/naming.test.ts` — passed.
+- `git diff --check` — passed.
+- `npm exec -- biome check .` — failed only on pre-existing generated `.pi-subagents/artifacts/*_meta.json` formatting; the two Task 2 files pass focused Biome and no generated artifacts were changed.
+- Validation evidence is included in the finalization commit for this checkpoint.
