@@ -51,7 +51,7 @@
 		"@earendil-works/pi-coding-agent": "^0.82.1",
 		"@types/node": "^24.0.0",
 		"typescript": "^5.9.2",
-		"vitest": "^3.2.4"
+		"vitest": "^4.1.11"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
