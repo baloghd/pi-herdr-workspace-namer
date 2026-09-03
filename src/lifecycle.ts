@@ -98,77 +98,17 @@ export function registerWorkspaceNamer(pi: ExtensionAPI, dependencies: Workspace
 		return queued;
 	};
 
-	pi.on("session_start", async (_event, ctx) => {
-		const sessionId = ctx.sessionManager.getSessionId();
-		const reconstructed = reconstructState(ctx.sessionManager.getBranch(), sessionId);
-		const nativeName = normalizePrompt(pi.getSessionName() ?? "");
-		state = {
-			sessionId,
-			candidate: reconstructed.candidate,
-			title: nativeName ?? reconstructed.title,
-			generating: false,
-			syncing: false,
-			shuttingDown: false,
-		};
-		config = dependencies.loadConfig(ctx.cwd);
-		const captured = state;
-		if (nativeName) await queueSynchronization(nativeName, ctx, captured);
-	});
-
-	pi.on("input", (event) => {
-		const captured = state;
-		if (
-			!captured ||
-			captured.shuttingDown ||
-			(event.source !== "interactive" && event.source !== "rpc") ||
-			event.streamingBehavior !== undefined
-		) {
-			return;
-		}
-		const prompt = normalizePrompt(event.text);
-		if (!prompt || prompt.startsWith("/")) return;
-		captured.candidate = prompt;
-		record(pi, {
-			v: 1,
-			kind: "candidate",
-			sessionId: captured.sessionId,
-			prompt,
-			at: dependencies.now(),
-		});
-	});
-
-	pi.on("before_agent_start", (event) => {
-		const captured = state;
-		if (!captured || captured.shuttingDown || captured.candidate) return;
-		const prompt = normalizePrompt(event.prompt);
-		if (!prompt) return;
-		captured.candidate = prompt;
-		record(pi, {
-			v: 1,
-			kind: "candidate",
-			sessionId: captured.sessionId,
-			prompt,
-			at: dependencies.now(),
-		});
-	});
-
-	pi.on("agent_settled", async (_event, ctx) => {
-		const captured = state;
+	const performNaming = async (ctx: ExtensionContext, captured: RuntimeState): Promise<void> => {
 		const capturedConfig = config;
-		if (
-			!captured ||
-			!capturedConfig?.enabled ||
-			captured.shuttingDown ||
-			captured.title ||
-			captured.generating ||
-			!captured.candidate
-		) {
-			return;
-		}
-		captured.generating = true;
 		const candidate = captured.candidate;
+		if (!candidate) return;
+		captured.generating = true;
 		try {
-			const generated = await dependencies.generateTitle(ctx, candidate, capturedConfig.maxLength);
+			const generated = await dependencies.generateTitle(
+				ctx,
+				candidate,
+				capturedConfig?.maxLength ?? 48,
+			);
 			if (!isCurrent(captured) || captured.title) return;
 			const title = normalizePrompt(generated.title);
 			if (!title) return;
@@ -188,6 +128,92 @@ export function registerWorkspaceNamer(pi: ExtensionAPI, dependencies: Workspace
 		} finally {
 			if (isCurrent(captured)) captured.generating = false;
 		}
+	};
+
+	const startNaming = (ctx: ExtensionContext): void => {
+		const captured = state;
+		if (
+			!captured ||
+			!config?.enabled ||
+			captured.shuttingDown ||
+			captured.title ||
+			captured.generating ||
+			!captured.candidate
+		) {
+			return;
+		}
+		void performNaming(ctx, captured);
+	};
+
+	pi.on("session_start", async (_event, ctx) => {
+		const sessionId = ctx.sessionManager.getSessionId();
+		const reconstructed = reconstructState(ctx.sessionManager.getBranch(), sessionId);
+		const nativeName = normalizePrompt(pi.getSessionName() ?? "");
+		state = {
+			sessionId,
+			candidate: reconstructed.candidate,
+			title: nativeName ?? reconstructed.title,
+			generating: false,
+			syncing: false,
+			shuttingDown: false,
+		};
+		config = dependencies.loadConfig(ctx.cwd);
+		const captured = state;
+		if (nativeName) await queueSynchronization(nativeName, ctx, captured);
+	});
+
+	pi.on("input", (event, ctx) => {
+		const captured = state;
+		if (
+			!captured ||
+			captured.shuttingDown ||
+			(event.source !== "interactive" && event.source !== "rpc") ||
+			event.streamingBehavior !== undefined
+		) {
+			return;
+		}
+		const prompt = normalizePrompt(event.text);
+		if (!prompt || prompt.startsWith("/")) return;
+		captured.candidate = prompt;
+		record(pi, {
+			v: 1,
+			kind: "candidate",
+			sessionId: captured.sessionId,
+			prompt,
+			at: dependencies.now(),
+		});
+		startNaming(ctx);
+	});
+
+	pi.on("before_agent_start", (event, ctx) => {
+		const captured = state;
+		if (!captured || captured.shuttingDown || captured.candidate) return;
+		const prompt = normalizePrompt(event.prompt);
+		if (!prompt) return;
+		captured.candidate = prompt;
+		record(pi, {
+			v: 1,
+			kind: "candidate",
+			sessionId: captured.sessionId,
+			prompt,
+			at: dependencies.now(),
+		});
+		startNaming(ctx);
+	});
+
+	pi.on("agent_settled", (_event, ctx) => {
+		const captured = state;
+		if (
+			!captured ||
+			!config?.enabled ||
+			captured.shuttingDown ||
+			captured.title ||
+			captured.generating ||
+			!captured.candidate
+		) {
+			return;
+		}
+		startNaming(ctx);
 	});
 
 	pi.on("session_info_changed", async (event, ctx) => {

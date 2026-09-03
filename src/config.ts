@@ -13,7 +13,7 @@ export interface WorkspaceNamerConfig {
 
 export const DEFAULT_CONFIG: WorkspaceNamerConfig = {
 	enabled: true,
-	maxLength: 48,
+	maxLength: 32,
 	fallback: "local",
 	notifyOnError: true,
 	herdrCommand: "herdr",

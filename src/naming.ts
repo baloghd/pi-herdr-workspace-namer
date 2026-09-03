@@ -1,6 +1,6 @@
 const TITLE_SYSTEM_PROMPT = [
 	"Create a concise task title for a coding-agent workspace.",
-	"Return only 3 to 6 words in the user's language.",
+	"Return only 1 to 3 words in the user's language.",
 	"Use title case when natural for that language.",
 	"Describe the task, not the conversation.",
 	"No quotes, markdown, path names, issue commentary, or trailing punctuation.",
@@ -63,7 +63,7 @@ export function normalizeTitle(value: string, maxLength: number): string | undef
 	}
 	if (!text || /[`*_~]/.test(text) || COMMENTARY_PREFIX.test(text)) return undefined;
 	const words = text.split(" ");
-	if (words.length < 2 || words.length > 8 || maxLength < 1) return undefined;
+	if (words.length > 3 || maxLength < 1) return undefined;
 	return (
 		[...text]
 			.slice(0, maxLength)
@@ -86,7 +86,7 @@ export function fallbackTitle(prompt: string, maxLength: number): string {
 	const words = safe
 		.split(" ")
 		.filter((word) => word && !STOP_WORDS.has(word.toLowerCase()))
-		.slice(0, 6)
+		.slice(0, 3)
 		.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 	const candidate = words.join(" ") || "Pi Task";
 	return [...candidate].slice(0, Math.max(0, maxLength)).join("").trim();
