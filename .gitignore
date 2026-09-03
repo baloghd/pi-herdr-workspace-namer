@@ -1,6 +1,1 @@
 node_modules/
-coverage/
-*.tgz
-.DS_Store
-.env
-.pi-herdr-workspace-namer/
