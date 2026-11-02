@@ -29,7 +29,12 @@ async function completeWithCurrentModel(
 			messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
 		},
 		{
-			maxTokens: 32,
+			// OpenCode endpoints reject requests without x-opencode-session, which
+			// the provider derives from this id.
+			sessionId: ctx.sessionManager.getSessionId(),
+			// Thinking models spend the first tokens on reasoning, so a 32-token
+			// cap ends the response before any title text exists.
+			maxTokens: 512,
 			apiKey: auth.apiKey,
 			headers: { ...(ctx.model.headers ?? {}), ...(auth.headers ?? {}) },
 		},
